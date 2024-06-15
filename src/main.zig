@@ -35,10 +35,10 @@ pub fn main() !void {
         .x = 16,
     };
 
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer arena.deinit();
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
 
-    const allocator = arena.allocator();
+    const allocator = gpa.allocator();
 
     const res = try zbytes.encdec.encode(Test2, allocator, t, std.builtin.Endian.big);
     defer res.deinit();

@@ -1,0 +1,14 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug run",
+            "program": "${workspaceFolder}/zig-out/bin/diho_zpkov2",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "run",
+        }
+    ]
+}
