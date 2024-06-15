@@ -40,7 +40,7 @@ pub fn main() !void {
 
     const allocator = gpa.allocator();
 
-    const res = try zbytes.encdec.encode(Test2, allocator, t, std.builtin.Endian.big);
+    const res = try zbytes.encdec.encode(allocator, t, std.builtin.Endian.big);
     defer res.deinit();
 
     std.debug.print("Test 2 {x}\n", .{res.getData()});
