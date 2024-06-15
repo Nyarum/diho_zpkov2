@@ -1,24 +1,47 @@
 const std = @import("std");
+const xev = @import("xev");
+const zbytes = @import("zbytes");
+
+const Test2 = struct {
+    x: u32,
+
+    pub inline fn tag(self: Test2, comptime T: type, comptime name: []const u8) ?zbytes.encdec.Tag(T) {
+        const caseString = enum { x };
+        const case = std.meta.stringToEnum(caseString, name) orelse return null;
+        switch (case) {
+            .x => return tagx(self),
+        }
+    }
+
+    inline fn tagx(self: Test2) zbytes.encdec.Tag(u32) {
+        _ = self; // autofix
+        return zbytes.encdec.Tag(u32){
+            .isLittle = true,
+            .fieldOption = zbytes.encdec.FieldOption(u32){
+                .isIgnore = false,
+                .eq = zbytes.encdec.FieldOptionEq(u32){
+                    .eq = 16,
+                },
+            },
+        };
+    }
+};
 
 pub fn main() !void {
     // Prints to stderr (it's a shortcut based on `std.io.getStdErr()`)
     std.debug.print("All your {s} are belong to us.\n", .{"codebase"});
 
-    // stdout is for the actual output of your application, for example if you
-    // are implementing gzip, then only the compressed bytes should be sent to
-    // stdout, not any debugging messages.
-    const stdout_file = std.io.getStdOut().writer();
-    var bw = std.io.bufferedWriter(stdout_file);
-    const stdout = bw.writer();
+    const t = Test2{
+        .x = 16,
+    };
 
-    try stdout.print("Run `zig build test` to run the tests.\n", .{});
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
 
-    try bw.flush(); // don't forget to flush!
-}
+    const allocator = arena.allocator();
 
-test "simple test" {
-    var list = std.ArrayList(i32).init(std.testing.allocator);
-    defer list.deinit(); // try commenting this out and see if zig detects the memory leak!
-    try list.append(42);
-    try std.testing.expectEqual(@as(i32, 42), list.pop());
+    const res = try zbytes.encdec.encode(Test2, allocator, t, std.builtin.Endian.big);
+    defer res.deinit();
+
+    std.debug.print("Test 2 {x}\n", .{res.getData()});
 }
