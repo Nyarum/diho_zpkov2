@@ -1,6 +1,7 @@
 const std = @import("std");
 const xev = @import("xev");
 const zbytes = @import("zbytes");
+const actor = @import("actor.zig");
 
 const Test2 = struct {
     x: u32,
@@ -28,20 +29,28 @@ const Test2 = struct {
 };
 
 pub fn main() !void {
-    // Prints to stderr (it's a shortcut based on `std.io.getStdErr()`)
-    std.debug.print("All your {s} are belong to us.\n", .{"codebase"});
-
-    const t = Test2{
-        .x = 16,
-    };
-
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
-
     const allocator = gpa.allocator();
 
-    const res = try zbytes.encdec.encode(allocator, t, std.builtin.Endian.big);
-    defer res.deinit();
+    var loopNew = try allocator.create(xev.Loop);
+    defer loopNew.deinit();
 
-    std.debug.print("Test 2 {x}\n", .{res.getData()});
+    loopNew.* = try xev.Loop.init(.{});
+
+    const actorHandler = actor.Actor(Test2).init(allocator, "test", "pid");
+    try actorHandler.start(loopNew);
+
+    _ = try std.Thread.spawn(.{}, loopWait, .{loopNew});
+
+    while (true) {
+        std.time.sleep(1 * std.time.ns_per_s);
+        std.debug.print("send notification\n", .{});
+        try actorHandler.send(Test2{ .x = 16 });
+    }
+}
+
+fn loopWait(loop: *xev.Loop) void {
+    std.debug.print("start actors loop\n", .{});
+    loop.run(.until_done) catch unreachable;
 }
