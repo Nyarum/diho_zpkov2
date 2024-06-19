@@ -11,40 +11,54 @@ pub fn Elem(comptime T: type) type {
     };
 }
 
-fn Userdata(comptime Msg: type) type {
+fn Userdata(comptime Msg: type, comptime Handler: type) type {
     return struct {
         queue: *queue.Intrusive(Elem(Msg)),
         allocator: std.mem.Allocator,
+        handler: *Handler = undefined,
     };
 }
 
-pub fn Actor(comptime Msg: type) type {
+pub fn Actor(comptime Msg: type, comptime Handler: type) type {
     return struct {
         name: []const u8,
         pid: []const u8,
         asyncHandler: *xev.Async = undefined,
         allocator: std.mem.Allocator = undefined,
         queue: *queue.Intrusive(Elem(Msg)),
-        userdata: *Userdata(Msg) = undefined,
+        userdata: *Userdata(Msg, Handler) = undefined,
         c_wait: *xev.Completion = undefined,
+        handler: *Handler = undefined,
 
-        pub fn init(allocator: std.mem.Allocator, name: []const u8, pid: []const u8) *Actor(Msg) {
-            const queueNew = allocator.create(queue.Intrusive(Elem(Msg))) catch unreachable;
-            queueNew.init();
-
+        pub fn init(allocator: std.mem.Allocator, name: []const u8, pid: []const u8, actorHandler: Handler) !*Actor(Msg, Handler) {
+            _ = actorHandler; // autofix
             // Create the actor
-            const actor = allocator.create(Actor(Msg)) catch unreachable;
-            actor.* = Actor(Msg){
+            const actor = try allocator.create(Actor(Msg, Handler));
+            actor.* = Actor(Msg, Handler){
                 .name = name,
                 .pid = pid,
                 .allocator = allocator,
-                .queue = queueNew,
+                .queue = try allocator.create(queue.Intrusive(Elem(Msg))),
+                .asyncHandler = try allocator.create(xev.Async),
+                .c_wait = try allocator.create(xev.Completion),
+                .userdata = try allocator.create(Userdata(Msg, Handler)),
+                .handler = try allocator.create(Handler),
+            };
+
+            actor.queue.init();
+
+            actor.asyncHandler.* = try xev.Async.init();
+
+            actor.userdata.* = Userdata(Msg, Handler){
+                .queue = actor.queue,
+                .allocator = actor.allocator,
+                .handler = actor.handler,
             };
 
             return actor;
         }
 
-        pub fn deinit(self: *Actor(Msg)) void {
+        pub fn deinit(self: *Actor(Msg, Handler)) void {
             self.allocator.destroy(self.queue);
             self.allocator.destroy(self.userdata);
             self.asyncHandler.deinit();
@@ -53,36 +67,20 @@ pub fn Actor(comptime Msg: type) type {
             self.allocator.destroy(self);
         }
 
-        pub fn start(self: *Actor(Msg), loop: *xev.Loop) !void {
-            const asyncImplNew = try self.allocator.create(xev.Async);
-            asyncImplNew.* = try xev.Async.init();
-
-            self.asyncHandler = asyncImplNew;
-
-            self.userdata = try self.allocator.create(Userdata(Msg));
-            self.userdata.* = Userdata(Msg){
-                .queue = self.queue,
-                .allocator = self.allocator,
-            };
-
-            // Wait
-            self.c_wait = try self.allocator.create(xev.Completion);
-            asyncImplNew.wait(loop, self.c_wait, Userdata(Msg), self.userdata, (struct {
+        pub fn start(self: *Actor(Msg, Handler), loop: *xev.Loop) !void {
+            self.asyncHandler.wait(loop, self.c_wait, Userdata(Msg, Handler), self.userdata, (struct {
                 fn callback(
-                    userdata: ?*Userdata(Msg),
+                    userdata: ?*Userdata(Msg, Handler),
                     _: *xev.Loop,
                     _: *xev.Completion,
                     r: xev.Async.WaitError!void,
                 ) xev.CallbackAction {
-                    const messagesGet = userdata.?.queue;
+                    if (userdata) |data| {
+                        if (data.queue.pop()) |msg| {
+                            defer userdata.?.allocator.destroy(msg);
 
-                    std.debug.print("test async method\n", .{});
-                    //@compileLog("test", userdata.?.queue);
-
-                    if (messagesGet.pop()) |msg| {
-                        defer userdata.?.allocator.destroy(msg);
-
-                        std.debug.print("test async msg {any}\n", .{msg});
+                            data.handler.callback(msg.value);
+                        }
                     }
 
                     _ = r catch unreachable;
@@ -92,12 +90,13 @@ pub fn Actor(comptime Msg: type) type {
             }).callback);
         }
 
-        pub fn send(self: *Actor(Msg), msg: anytype) !void {
+        pub fn send(self: *Actor(Msg, Handler), msg: anytype) !void {
             const elem = try self.allocator.create(Elem(@TypeOf(msg)));
             elem.* = Elem(@TypeOf(msg)){
                 .value = msg,
             };
             self.queue.push(elem);
+
             try self.asyncHandler.notify();
         }
     };

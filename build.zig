@@ -26,6 +26,7 @@ pub fn build(b: *std.Build) void {
     });
     exe.root_module.addImport("xev", xevlib.module("xev"));
     exe.root_module.addImport("zbytes", zbytes.module("zbytes"));
+    exe.root_module.addAnonymousImport("zbench", .{ .root_source_file = b.path("libs/zbench/zbench.zig") });
 
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default
@@ -60,6 +61,8 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+
+    exe_unit_tests.root_module.addAnonymousImport("zbench", .{ .root_source_file = b.path("libs/zbench/zbench.zig") });
 
     const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);
 
